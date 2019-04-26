@@ -190,9 +190,17 @@ func (os *OpenStack) AttachVolume(instanceID, volumeID string) (string, error) {
 		return "", fmt.Errorf("disk %s is attached to a different instance (%s)", volumeID, volume.AttachedServerId)
 	}
 
-	_, err = volumeattach.Create(os.compute, instanceID, &volumeattach.CreateOpts{
-		VolumeID: volume.ID,
-	}).Extract()
+	if volume.Status == VolumeAvailableStatus {
+		provider, err := CreateOpenStackProvider()
+		if err != nil {
+			return "", err
+		}
+		_, err = volumeattach.Create(provider.(*OpenStack).compute, instanceID, &volumeattach.CreateOpts{
+			VolumeID: volume.ID,
+		}).Extract()
+	} else {
+		return "", fmt.Errorf("volume: %s isn't in available state so we can not attach it. status: %s ", volumeID, volume.Status)
+	}
 
 	if err != nil {
 		return "", fmt.Errorf("failed to attach %s volume to %s compute: %v", volumeID, instanceID, err)
@@ -244,7 +252,11 @@ func (os *OpenStack) DetachVolume(instanceID, volumeID string) error {
 	if volume.AttachedServerId != instanceID {
 		return fmt.Errorf("disk: %s has no attachments or is not attached to compute: %s", volume.Name, instanceID)
 	} else {
-		err = volumeattach.Delete(os.compute, instanceID, volume.ID).ExtractErr()
+		provider, err := CreateOpenStackProvider()
+		if err != nil {
+			return err
+		}
+		err = volumeattach.Delete(provider.(*OpenStack).compute, instanceID, volume.ID).ExtractErr()
 		if err != nil {
 			return fmt.Errorf("failed to delete volume %s from compute %s attached %v", volume.ID, instanceID, err)
 		}

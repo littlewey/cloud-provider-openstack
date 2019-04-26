@@ -26,6 +26,7 @@ import (
 	"k8s.io/klog"
 
 	"k8s.io/cloud-provider-openstack/pkg/csi/cinder/mount"
+	"k8s.io/cloud-provider-openstack/pkg/util/metadata"
 	"k8s.io/cloud-provider-openstack/pkg/csi/cinder/openstack"
 )
 
@@ -118,6 +119,7 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 
 	stagingTarget := req.GetStagingTargetPath()
 	volumeCapability := req.GetVolumeCapability()
+	volumeID := req.GetVolumeId()
 	if len(stagingTarget) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Staging target not provided")
 	}
@@ -125,21 +127,22 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
 	}
 
-	devicePath, ok := req.GetPublishContext()["DevicePath"]
-	if !ok {
-		return nil, status.Error(codes.InvalidArgument, "Device path not provided")
+
+	// Do not trust the path provided by cinder, get the real path on node
+	devicePath, err := ns.getDevicePath(volumeID)
+
+	if err != nil {
+		klog.V(3).Infof("Failed to GetDevicePath: %v", err)
+		return nil, err
 	}
-	// Get Mount Provider
+	if devicePath == "" {
+		return nil, status.Error(codes.Internal, "Unable to find Device path for volume")
+	}
+
 	m, err := mount.GetMountProvider()
 	if err != nil {
 		klog.V(3).Infof("Failed to GetMountProvider: %v", err)
 		return nil, status.Errorf(codes.Internal, "Failed to GetMountProvider: %v", err)
-	}
-	// Device Scan
-	err = m.ScanForAttach(devicePath)
-	if err != nil {
-		klog.V(3).Infof("Failed to ScanForAttach: %v", err)
-		return nil, status.Errorf(codes.Internal, "Failed to ScanForAttach: %v", err)
 	}
 
 	// Verify whether mounted
@@ -211,10 +214,12 @@ func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoReque
 	}
 	zone, err := getAvailabilityZoneMetadataService()
 	topology := &csi.Topology{Segments: map[string]string{topologyKey: zone}}
+	maxVolume := getMaxVolumeLimit()
 
 	return &csi.NodeGetInfoResponse{
 		NodeId:             nodeID,
 		AccessibleTopology: topology,
+		MaxVolumesPerNode:  maxVolume,
 	}, nil
 }
 
@@ -228,6 +233,25 @@ func (ns *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetC
 
 func (ns *nodeServer) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, fmt.Sprintf("NodeGetVolumeStats is not yet implemented"))
+}
+
+func (ns *nodeServer) getDevicePath(volumeID string) (string, error) {
+	var devicePath string
+
+	m, err := mount.GetMountProvider()
+	if err != nil {
+		klog.V(3).Infof("Failed to GetMountProvider: %v", err)
+		return "", err
+	}
+
+	devicePath, _ = m.GetDevicePath(volumeID)
+	if devicePath == "" {
+		// try to get from metadata service
+		devicePath = metadata.GetDevicePath(volumeID)
+	}
+
+	return devicePath, nil
+
 }
 
 func getNodeIDMountProvider() (string, error) {
@@ -249,29 +273,21 @@ func getNodeIDMountProvider() (string, error) {
 }
 
 func getNodeIDMetdataService() (string, error) {
-	m, err := openstack.GetMetadataProvider()
+	m, err := metadata.Get("configDrive,metadataService")
 	if err != nil {
 		klog.V(3).Infof("Failed to GetMetadataProvider: %v", err)
 		return "", err
 	}
-	nodeID, err := m.GetInstanceID()
-	if err != nil {
-		return "", err
-	}
-	return nodeID, nil
+	return m.UUID, nil
 }
 
 func getAvailabilityZoneMetadataService() (string, error) {
-	m, err := openstack.GetMetadataProvider()
+	m, err := metadata.Get("configDrive,metadataService")
 	if err != nil {
 		klog.V(3).Infof("Failed to GetMetadataProvider: %v", err)
 		return "", err
 	}
-	zone, err := m.GetAvailabilityZone()
-	if err != nil {
-		return "", err
-	}
-	return zone, nil
+	return m.AvailabilityZone, nil
 }
 
 func getNodeID() (string, error) {
@@ -289,4 +305,8 @@ func getNodeID() (string, error) {
 		return "", err
 	}
 	return nodeID, nil
+}
+
+func getMaxVolumeLimit() int64 {
+	return openstack.GetMaxVolLimit()
 }
