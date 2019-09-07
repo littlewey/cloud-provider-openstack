@@ -6,6 +6,7 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/keymanager/v1/secrets"
+	openstack_provider "k8s.io/cloud-provider-openstack/pkg/cloudprovider/providers/openstack"
 	"k8s.io/cloud-provider-openstack/pkg/version"
 	"k8s.io/klog"
 )
@@ -59,6 +60,12 @@ func newBarbicanClient(cfg Config) (client *gophercloud.ServiceClient, err error
 
 	provider, err := openstack.AuthenticatedClient(cfg.toAuthOptions())
 
+	if err != nil {
+		return nil, err
+	}
+
+	// TBD(Wey Gu): not considerring AuthenticateV2 for now.
+	err = openstack_provider.PatchEndpointLocator(provider, cfg.toAuthOptions())
 	if err != nil {
 		return nil, err
 	}
