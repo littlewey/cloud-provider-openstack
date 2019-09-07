@@ -33,6 +33,7 @@ import (
 	gcfg "gopkg.in/gcfg.v1"
 	netutil "k8s.io/apimachinery/pkg/util/net"
 	certutil "k8s.io/client-go/util/cert"
+	openstack_provider "k8s.io/cloud-provider-openstack/pkg/cloudprovider/providers/openstack"
 	"k8s.io/cloud-provider-openstack/pkg/version"
 	"k8s.io/klog"
 )
@@ -245,6 +246,13 @@ func CreateOpenStackProvider() (IOpenStack, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// TBD(Wey Gu): not considerring AuthenticateV2 for now.
+	err = openstack_provider.PatchEndpointLocator(provider, cfg.toAuth3Options())
+	if err != nil {
+		return nil, err
+	}
+
 	// Init Nova ServiceClient
 	computeclient, err := openstack.NewComputeV2(provider, epOpts)
 	if err != nil {
