@@ -163,6 +163,12 @@ func getKeystoneVolumeService(cfg cinderConfig) (*gophercloud.ServiceClient, err
 		return nil, err
 	}
 
+	// TBD(Wey Gu): not considerring AuthenticateV2 for now.
+	err = openstack_provider.PatchEndpointLocator(provider, cfg.toAuthOptions())
+	if err != nil {
+		return nil, err
+	}
+
 	volumeService, err := openstack.NewBlockStorageV2(provider,
 		gophercloud.EndpointOpts{
 			Region: cfg.Global.Region,
@@ -175,6 +181,15 @@ func getKeystoneVolumeService(cfg cinderConfig) (*gophercloud.ServiceClient, err
 
 func getNoAuthVolumeService(cfg cinderConfig) (*gophercloud.ServiceClient, error) {
 	provider, err := noauth.NewClient(gophercloud.AuthOptions{
+		Username:   cfg.Global.Username,
+		TenantName: cfg.Global.TenantName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// TBD(Wey Gu): not considerring AuthenticateV2 for now.
+	err = openstack_provider.PatchEndpointLocator(provider, gophercloud.AuthOptions{
 		Username:   cfg.Global.Username,
 		TenantName: cfg.Global.TenantName,
 	})

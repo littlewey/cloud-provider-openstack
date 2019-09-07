@@ -29,6 +29,7 @@ import (
 	netutil "k8s.io/apimachinery/pkg/util/net"
 	certutil "k8s.io/client-go/util/cert"
 	"k8s.io/cloud-provider-openstack/pkg/ingress/config"
+	openstack_provider "k8s.io/cloud-provider-openstack/pkg/cloudprovider/providers/openstack"
 )
 
 // OpenStack is an implementation of cloud provider Interface for OpenStack.
@@ -67,6 +68,12 @@ func NewOpenStack(cfg config.Config) (*OpenStack, error) {
 		err = openstack.Authenticate(provider, cfg.ToAuthOptions())
 	}
 
+	if err != nil {
+		return nil, err
+	}
+
+	// TBD(Wey Gu): not considerring AuthenticateV2 for now.
+	err = openstack_provider.PatchEndpointLocator(provider, cfg.ToAuthOptions())
 	if err != nil {
 		return nil, err
 	}

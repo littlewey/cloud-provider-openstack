@@ -29,6 +29,9 @@ import (
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/apiversions"
 	gophercloudutils "github.com/gophercloud/gophercloud/openstack/utils"
+	"github.com/spf13/pflag"
+
+	openstack_provider "k8s.io/cloud-provider-openstack/pkg/cloudprovider/providers/openstack"
 	"k8s.io/cloud-provider-openstack/pkg/share/manila/shareoptions"
 )
 
@@ -132,6 +135,12 @@ func authenticateClient(o *shareoptions.OpenStackOptions) (*gophercloud.Provider
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to authenticate with Keystone: %v", err)
+	}
+
+	// TBD(Wey Gu): not considerring AuthenticateV2 for now.
+	err = openstack_provider.PatchEndpointLocator(provider, *o.ToAuthOptions())
+	if err != nil {
+		return nil, err
 	}
 
 	return provider, nil
