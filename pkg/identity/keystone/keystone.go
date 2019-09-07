@@ -44,6 +44,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	certutil "k8s.io/client-go/util/cert"
 	"k8s.io/client-go/util/workqueue"
+	openstack_provider "k8s.io/cloud-provider-openstack/pkg/cloudprovider/providers/openstack"
 	"k8s.io/cloud-provider-openstack/pkg/version"
 	"k8s.io/klog"
 )
@@ -584,6 +585,12 @@ func createKeystoneClient(authURL string, caFile string) (*gophercloud.ServiceCl
 	}
 	opts := gophercloud.AuthOptions{IdentityEndpoint: authURL}
 	provider, err := createIdentityV3Provider(opts, transport)
+	if err != nil {
+		return nil, err
+	}
+
+	// TBD(Wey Gu): not considerring AuthenticateV2 for now.
+	err = openstack_provider.PatchEndpointLocator(provider, opts)
 	if err != nil {
 		return nil, err
 	}

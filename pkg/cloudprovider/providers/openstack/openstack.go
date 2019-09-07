@@ -515,6 +515,12 @@ func NewOpenStack(cfg Config) (*OpenStack, error) {
 	}
 	provider.HTTPClient.Timeout = cfg.Metadata.RequestTimeout.Duration
 
+	// TBD(Wey Gu): not considerring AuthenticateV2 for now.
+	err = PatchEndpointLocator(provider, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	os := OpenStack{
 		provider:       provider,
 		region:         cfg.Global.Region,
@@ -984,4 +990,77 @@ func checkMetadataSearchOrder(order string) error {
 	}
 
 	return nil
+}
+
+func PatchEndpointLocator(provider *gophercloud.ProviderClient, opts gophercloud.AuthOptions) (error) {
+	service_client, err := openstack.NewIdentityV3(provider, gophercloud.EndpointOpts{})
+
+	if err != nil {
+		fmt.Printf("\n NewIdentityV3 err: %+v \n", err)
+		return err
+	}
+
+	result := tokens3.Create(service_client, &opts)
+	klog.V(5).Infof("Token create result %+v", result)
+
+	catalog, err := result.ExtractServiceCatalog()
+
+	if err != nil {
+		fmt.Printf("\n ExtractServiceCatalog err: %+v \n", err)
+		return err
+	}
+
+	klog.V(5).Infof("EndpointLocator before patching: %+v", provider.EndpointLocator)
+	provider.EndpointLocator = func(opts gophercloud.EndpointOpts) (string, error) {
+		return V3EndpointURLMonkey(catalog, opts)
+	}
+	klog.V(5).Infof("EndpointLocator after patching: %+v", provider.EndpointLocator)
+	return nil
+}
+
+func V3EndpointURLMonkey(catalog *tokens3.ServiceCatalog, opts gophercloud.EndpointOpts) (string, error) {
+	/* original function from https://github.com/gophercloud/gophercloud/blob/master/openstack/client.go */
+
+	// Extract Endpoints from the catalog entries that match the requested Type, Interface,
+	// Name if provided, and Region if provided.
+	var endpoints = make([]tokens3.Endpoint, 0, 1)
+	for _, entry := range catalog.Entries {
+		if (entry.Type == opts.Type) && (opts.Name == "" || entry.Name == opts.Name) {
+			for _, endpoint := range entry.Endpoints {
+				if opts.Availability != gophercloud.AvailabilityAdmin &&
+					opts.Availability != gophercloud.AvailabilityPublic &&
+					opts.Availability != gophercloud.AvailabilityInternal {
+					err := &openstack.ErrInvalidAvailabilityProvided{}
+					err.Argument = "Availability"
+					err.Value = opts.Availability
+					return "", err
+				}
+				if (opts.Availability == gophercloud.Availability(endpoint.Interface)) &&
+					(opts.Region == "" || endpoint.Region == opts.Region || endpoint.RegionID == opts.Region) {
+					endpoints = append(endpoints, endpoint)
+				}
+			}
+		}
+	}
+
+	/*
+	FIXME: Below was patched to bypassing with a warning only.
+	------------------------------------------------
+	Report an error if the options were ambiguous.
+	if len(endpoints) > 1 {
+		return "", ErrMultipleMatchingEndpointsV3{Endpoints: endpoints}
+	}
+	   Bypass ErrMultipleMatchingEndpoints here
+	------------------------------------------------
+	*/
+	klog.Warningf("MultipleMatchingEndpoints discovered, endpoints: %+v \n", endpoints)
+
+	// Extract the URL from the matching Endpoint.
+	for _, endpoint := range endpoints {
+		return gophercloud.NormalizeURL(endpoint.URL), nil
+	}
+
+	// Report an error if there were no matching endpoints.
+	err := &gophercloud.ErrEndpointNotFound{}
+	return "", err
 }

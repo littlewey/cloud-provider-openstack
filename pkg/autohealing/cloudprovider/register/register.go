@@ -32,6 +32,7 @@ import (
 	"k8s.io/cloud-provider-openstack/pkg/autohealing/cloudprovider"
 	"k8s.io/cloud-provider-openstack/pkg/autohealing/cloudprovider/openstack"
 	"k8s.io/cloud-provider-openstack/pkg/autohealing/config"
+	openstack_provider "k8s.io/cloud-provider-openstack/pkg/cloudprovider/providers/openstack"
 	"k8s.io/cloud-provider-openstack/pkg/version"
 )
 
@@ -66,6 +67,12 @@ func registerOpenStack(cfg config.Config, kubeClient kubernetes.Interface) (clou
 		err = gopenstack.Authenticate(client, cfg.ToAuthOptions())
 	}
 
+	if err != nil {
+		return nil, err
+	}
+
+	// TBD(Wey Gu): not considerring AuthenticateV2 for now.
+	err = openstack_provider.PatchEndpointLocator(client, opts)
 	if err != nil {
 		return nil, err
 	}
